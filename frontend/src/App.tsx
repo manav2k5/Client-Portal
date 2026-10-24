@@ -1,10 +1,14 @@
+import OrderNavigation from "./components/OrderNavigation";
 import { useState } from "react";
 import type { FormEvent } from "react";
-
+import DocumentsPage from "./components/DocumentsPage";
 import Icon from "./components/Icon";
 import Modal from "./components/Modal";
 import CustomersPage from "./components/CustomersPage";
 import OrdersPage from "./components/OrdersPage";
+import AdminDashboard from "./components/AdminDashboard";
+import type { SavedOrder } from "./components/OrdersPage";
+import InventoryPage from "./components/InventoryPage";
 import {
   customers as sampleCustomers,
   initialOrders,
@@ -16,6 +20,9 @@ import {
 
 import type { Order } from "./data";
 import "./App.css";
+import "./components/InventoryPage.css";
+import "./components/dashboard-theme.css";
+import CustomerEmailPortal from "./components/CustomerEmailPortal";
 
 type Role = "admin" | "customer";
 
@@ -23,6 +30,9 @@ type Page =
   | "Dashboard"
   | "Customers"
   | "Orders"
+  | "Completed"
+  | "Archive"
+  | "Inventory"
   | "Deliveries"
   | "Documents"
   | "Profile";
@@ -31,6 +41,9 @@ const icons: Record<Page, string> = {
   Dashboard: "grid",
   Customers: "users",
   Orders: "box",
+  Completed: "box",
+  Archive: "box",
+  Inventory: "box",
   Deliveries: "truck",
   Documents: "file",
   Profile: "users",
@@ -84,6 +97,8 @@ function downloadDocument(doc: (typeof documents)[number]) {
 }
 
 export default function App() {
+  const [dashboardRefresh, setDashboardRefresh] = useState(0);
+  const [dashboardOrder, setDashboardOrder] = useState<SavedOrder | null>(null);
   const [role, setRole] = useState<Role | null>(null);
   const [page, setPage] = useState<Page>("Dashboard");
 
@@ -127,60 +142,11 @@ export default function App() {
     return matchesSearch && matchesStatus && matchesCompany;
   });
 
-  const activeOrders = visibleOrders.filter(
-    (order) => order.status !== "Delivered"
-  );
-
-  const overdueOrders = visibleOrders.filter(
-    (order) =>
-      order.dispatched === 0 &&
-      order.due < "2026-09-24"
-  );
-
-  const inTransitShipments = visibleShipments.filter(
-    (shipment) => shipment.status === "In transit"
-  );
-
-  const nextDelivery = inTransitShipments[0];
-
   const navigation: Page[] = admin
-    ? ["Dashboard", "Customers", "Orders", "Deliveries", "Documents"]
+    ? ["Dashboard", "Customers", "Orders", "Completed", "Archive", "Inventory", "Deliveries", "Documents"]
     : ["Dashboard", "Orders", "Deliveries", "Documents", "Profile"];
 
-  const stats = [
-    {
-      label: admin ? "Sample customers" : "Sample orders",
-      value: admin ? sampleCustomers.length : visibleOrders.length,
-      icon: admin ? "users" : "box",
-      note: admin
-        ? "Live records are in Customers"
-        : "Across your sample company",
-    },
-    {
-      label: "Open orders",
-      value: activeOrders.length,
-      icon: "box",
-      note: `${number(
-        activeOrders.reduce(
-          (total, order) =>
-            total + order.quantity - order.dispatched,
-          0
-        )
-      )} kg awaiting dispatch`,
-    },
-    {
-      label: "Shipments in transit",
-      value: inTransitShipments.length,
-      icon: "truck",
-      note: "On the way to customers",
-    },
-    {
-      label: "Documents available",
-      value: visibleDocs.length,
-      icon: "file",
-      note: "Organized by sales order",
-    },
-  ];
+
 
   function navigate(nextPage: Page) {
     setPage(nextPage);
@@ -188,6 +154,7 @@ export default function App() {
     setStatus("All statuses");
     setCompany("All customers");
     setNotice("");
+    setDashboardOrder(null);
   }
 
   function chooseWorkspace(nextRole: Role) {
@@ -450,7 +417,13 @@ export default function App() {
       </div>
     );
   }
-
+  if (role === "customer") {
+    return (
+      <CustomerEmailPortal
+        onBack={() => setRole(null)}
+      />
+    );
+  }
   if (!role) {
     return (
       <main className="chooser">
@@ -545,7 +518,7 @@ export default function App() {
         </div>
 
         <nav aria-label="Main navigation">
-          {navigation.map((item) => (
+          {navigation.filter(item => !["Completed", "Archive"].includes(item)).map((item) => item === "Orders" && admin ? <OrderNavigation key="orders-group" page={page} onNavigate={navigate} admin /> : (
             <button
               key={item}
               aria-label={item}
@@ -574,9 +547,9 @@ export default function App() {
             Development workspace
 
             <p>
-              Customers use the database.
+              Customers, orders and documents.
               <br />
-              Orders remain sample data.
+              Saved in your company database.
             </p>
           </div>
 
@@ -617,19 +590,17 @@ export default function App() {
 
           <div>
             <span className="preview-pill">
-              {page === "Customers"
-                ? "Live customers"
-                : "Sample data"}
+              {["Dashboard", "Customers", "Orders", "Documents"].includes(page)
+                ? "Database records"
+                : "Preview"}
             </span>
 
             <span className="top-date">
-              {page === "Customers"
-                ? new Date().toLocaleDateString("en-GB", {
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                  })
-                : "24 September 2026"}
+              {new Date().toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
             </span>
 
             <span className="avatar small">
@@ -667,13 +638,13 @@ export default function App() {
             </div>
 
             {admin && page === "Dashboard" && (
-              <button
+              <div className="dashboard-heading-actions"><button
                 className="primary"
                 onClick={() => navigate("Orders")}
               >
                 <Icon name="box" size={18} />
                 Manage orders
-              </button>
+              </button><button type="button" className="secondary dashboard-refresh-icon" title="Refresh dashboard" aria-label="Refresh dashboard" onClick={() => setDashboardRefresh(value => value + 1)}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg></button></div>
             )}
           </div>
 
@@ -684,194 +655,29 @@ export default function App() {
           )}
 
           {/* DASHBOARD — SAMPLE DATA */}
-          {page === "Dashboard" && (
-            <>
-              <div className="stats">
-                {stats.map((stat) => (
-                  <article className="stat" key={stat.label}>
-                    <div>
-                      <span>{stat.label}</span>
-
-                      <span className="soft-icon">
-                        <Icon name={stat.icon} />
-                      </span>
-                    </div>
-
-                    <strong>
-                      {stat.value.toString().padStart(2, "0")}
-                    </strong>
-
-                    <small>{stat.note}</small>
-                  </article>
-                ))}
-              </div>
-
-              <div className="overview-grid">
-                <section className="panel recent-orders">
-                  <div className="panel-heading">
-                    <div>
-                      <h2>Recent orders</h2>
-                      <p>Your latest sales orders at a glance</p>
-                    </div>
-
-                    <button
-                      className="text-button"
-                      onClick={() => navigate("Orders")}
-                    >
-                      View all
-                      <Icon name="arrow" size={16} />
-                    </button>
-                  </div>
-
-                  {renderOrderTable(visibleOrders.slice(0, 5))}
-                </section>
-
-                <section className="panel attention">
-                  <div className="panel-heading">
-                    <h2>
-                      {admin ? "Needs attention" : "Delivery update"}
-                    </h2>
-
-                    <span className="count">
-                      {admin
-                        ? overdueOrders.length
-                        : inTransitShipments.length}
-                    </span>
-                  </div>
-
-                  {admin ? (
-                    overdueOrders.length > 0 ? (
-                      overdueOrders.map((order) => (
-                        <button
-                          className="attention-item"
-                          key={order.id}
-                          onClick={() => setSelected(order)}
-                        >
-                          <span className="warning-icon">
-                            <Icon name="clock" />
-                          </span>
-
-                          <strong>Dispatch date passed</strong>
-
-                          <p>
-                            {order.id} · {order.customer}
-                          </p>
-
-                          <small>
-                            Planned {date(order.due)} ·{" "}
-                            {number(order.quantity)} kg
-                          </small>
-
-                          <span className="attention-link">
-                            Review order →
-                          </span>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="empty">
-                        No overdue dispatches.
-                      </div>
-                    )
-                  ) : nextDelivery ? (
-                    <div className="customer-update">
-                      <Icon name="truck" size={32} />
-                      <h3>Your next delivery</h3>
-
-                      <p>
-                        {number(nextDelivery.quantity)} kg is on its
-                        way to {nextDelivery.destination}.
-                      </p>
-
-                      <strong>
-                        Expected {date(nextDelivery.expected)}
-                      </strong>
-
-                      <button
-                        className="text-button"
-                        onClick={() => navigate("Deliveries")}
-                      >
-                        Track shipment →
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="empty">
-                      No deliveries in transit.
-                    </div>
-                  )}
-
-                  <div className="attention-foot">
-                    <Icon name="clock" size={14} />
-                    As of 24 Sep · Sample schedule
-                  </div>
-                </section>
-
-                <section className="panel">
-                  <div className="panel-heading">
-                    <div>
-                      <h2>Recent documents</h2>
-                      <p>Order paperwork, ready when you need it</p>
-                    </div>
-
-                    <button
-                      className="text-button"
-                      onClick={() => navigate("Documents")}
-                    >
-                      View all
-                      <Icon name="arrow" size={16} />
-                    </button>
-                  </div>
-
-                  {renderDocuments(visibleDocs.slice(0, 3))}
-                </section>
-
-                <section className="panel flow-panel">
-                  <div className="panel-heading">
-                    <h2>Order pipeline</h2>
-                    <Icon name="box" />
-                  </div>
-
-                  {orderStatuses.map((orderStatus) => {
-                    const count = visibleOrders.filter(
-                      (order) => order.status === orderStatus
-                    ).length;
-
-                    const percentage =
-                      visibleOrders.length > 0
-                        ? (count / visibleOrders.length) * 100
-                        : 0;
-
-                    return (
-                      <div
-                        className="pipeline-row"
-                        key={orderStatus}
-                      >
-                        <div>
-                          <span>{orderStatus}</span>
-                          <strong>{count}</strong>
-                        </div>
-
-                        <div className="progress">
-                          <i
-                            style={{
-                              width: `${percentage}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </section>
-              </div>
-            </>
+          {page === "Dashboard" && admin && (
+            <AdminDashboard
+              refreshKey={dashboardRefresh}
+              onNavigate={(next) => navigate(next)}
+              onOpenOrder={(order) => {
+                navigate("Orders");
+                setDashboardOrder(order);
+              }}
+            />
           )}
 
           {/* CUSTOMERS — LIVE DATABASE */}
           {page === "Customers" && admin && (
             <CustomersPage />
           )}
+          {page === "Inventory" && admin && (
+            <InventoryPage />
+          )}
 
           {/* ORDERS — SAMPLE DATA */}
-          {page === "Orders" && admin && <OrdersPage />}
+          {["Orders", "Completed", "Archive"].includes(page) && admin && (
+            <OrdersPage initialOrder={page === "Orders" ? dashboardOrder : null} view={page === "Archive" ? "archive" : page === "Completed" ? "completed" : "active"} />
+          )}
           {page === "Orders" && !admin && (
             <section className="panel">
               <div className="filters">
@@ -937,35 +743,8 @@ export default function App() {
             renderDeliveries(visibleShipments)}
 
           {/* DOCUMENTS — SAMPLE DATA */}
-          {page === "Documents" && (
-            <section className="panel">
-              <div className="filters">
-                <label className="search">
-                  <Icon name="search" size={18} />
-
-                  <input
-                    aria-label="Search documents"
-                    placeholder="Search document or order…"
-                    value={search}
-                    onChange={(event) =>
-                      setSearch(event.target.value)
-                    }
-                  />
-                </label>
-
-                <span className="muted">
-                  Downloads contain sample text only
-                </span>
-              </div>
-
-              {renderDocuments(
-                visibleDocs.filter((document) =>
-                  `${document.name} ${document.order}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase())
-                )
-              )}
-            </section>
+          {page === "Documents" && admin && (
+            <DocumentsPage />
           )}
 
           {/* PROFILE — SAMPLE DATA */}
@@ -1000,7 +779,7 @@ export default function App() {
             <span>
               {page === "Customers"
                 ? "Customers saved in Supabase"
-                : "Sample data · September 2026"}
+                : page === "Dashboard" ? "Live operations · Venus Wires" : "Sample data · September 2026"}
             </span>
           </footer>
         </main>

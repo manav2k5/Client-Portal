@@ -1,0 +1,50 @@
+/* Apple Design: hierarchy, restrained materials, immediate feedback. */
+.inventory-page { font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:#202631; font-optical-sizing:auto; }
+.content:has(.inventory-page) { background:#f5f6f8; }
+.inventory-page .inventory-hero { background:linear-gradient(120deg,#fff,#eef2f7); border:1px solid #fff; border-radius:1.25rem; padding:1.75rem 2rem; color:#202631; box-shadow:0 2px 10px #1b304008; }
+.inventory-page .inventory-hero::before,.inventory-page .inventory-hero::after { display:none; }
+.inventory-page .inventory-kicker { color:#657086; letter-spacing:.12em; font-size:.65rem; }
+.inventory-page .inventory-hero h2 { color:#202631; font-family:inherit; font-size:clamp(1.8rem,3vw,2.5rem); line-height:1.1; letter-spacing:-.035em; font-weight:650; margin:.5rem 0; }
+.inventory-page .inventory-hero p { color:#596579; font-size:.875rem; line-height:1.5; }
+.inventory-page .inventory-overview { margin:1rem 0; background:white; border:1px solid #e6e9ef; border-radius:1rem; overflow:hidden; }
+.inventory-page .inventory-overview > div { padding:1.1rem 1.5rem; border-color:#e6e9ef; }
+.inventory-page .inventory-overview span { color:#596579; font-size:.75rem; }
+.inventory-page .inventory-overview strong { color:#202631; font-size:1.75rem; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+.inventory-page .inventory-overview small { color:#596579; letter-spacing:0; }
+.inventory-page .inventory-catalog .filters { position:sticky; top:0; z-index:2; padding:.75rem; margin-bottom:1rem; border-radius:1rem; background:rgba(248,250,253,.9); border:1px solid #e0e5ed; backdrop-filter:blur(16px) saturate(130%); box-shadow:0 4px 14px #18283a06; align-items:center; }
+.inventory-page .filters input,.inventory-page .filters select { font:inherit; font-size:.8125rem; background:#fff; color:#303c4e; border-color:#d7dee8; border-radius:.625rem; min-height:2.75rem; }
+.inventory-page .inventory-stock-grid { gap:1rem; grid-template-columns:repeat(auto-fill,minmax(min(100%,17rem),1fr)); }
+.inventory-page .inventory-stock-card { display:flex; flex-direction:column; padding:1.25rem; border:1px solid #e1e6ed; border-radius:1.125rem; background:#fff; box-shadow:0 2px 6px #172f4705; transition:border-color 150ms ease-out,box-shadow 150ms ease-out; }
+.inventory-page .inventory-stock-card:hover { border-color:#c6d3e3; box-shadow:0 6px 18px #172f4709; }
+.inventory-page .inventory-card-top { margin-bottom:1rem; }
+.inventory-page .inventory-material-mark { background:linear-gradient(145deg,#f2f6fc,#e4eaf2); color:#657993; width:2.75rem; height:2.75rem; border-radius:.8rem; }
+.inventory-page .inventory-stock-state { font-size:.6875rem; font-weight:600; color:#236446; background:#edf7f1; padding:.375rem .625rem; }
+.inventory-page .is-empty .inventory-stock-state { color:#80551c; background:#fff3df; }
+.inventory-page .inventory-family { font-size:.625rem; letter-spacing:.075em; color:#657086; }
+.inventory-page .inventory-stock-card h3 { font-size:1.125rem; line-height:1.3; color:#202631; letter-spacing:-.015em; margin-bottom:.75rem; }
+.inventory-page .inventory-specs span { background:#f5f7fa; color:#526074; border:0; padding:.3rem .5rem; font-size:.75rem; }
+.inventory-page .inventory-card-weight { margin:1.4rem 0 1rem; }
+.inventory-page .inventory-card-weight strong { font-size:1.875rem; letter-spacing:-.035em; color:#202631; }
+.inventory-page .inventory-card-weight small { color:#657086; font-size:.75rem; }
+.inventory-page .inventory-location { border-top:1px solid #edf0f4; margin-top:auto; padding:1rem 0; }
+.inventory-page .inventory-location span { color:#657086; font-size:.625rem; }
+.inventory-page .inventory-location strong { color:#46556b; font-size:.75rem; }
+.inventory-page button,.inventory-styled-modal button { min-height:2.75rem; touch-action:manipulation; transition:transform 100ms ease-out,background-color 120ms ease-out; }
+.inventory-page .primary,.inventory-styled-modal .primary { background:#0875e1; border-color:#0875e1; color:white; border-radius:.7rem; box-shadow:0 2px 4px #0875e115; }
+.inventory-page .secondary { color:#34455b; background:white; border-color:#dbe2ec; border-radius:.7rem; }
+.inventory-page .inventory-card-actions { gap:.4rem; }
+.inventory-page .inventory-card-actions button { display:inline-flex; align-items:center; justify-content:center; gap:.25rem; background:#edf4fd; color:#0969c5; padding:.5rem .65rem; font-size:.75rem; border-radius:.625rem; }
+.inventory-page .inventory-card-actions button:last-child { color:#526074; background:#f5f7fa; }
+.inventory-page .inventory-card-actions button:hover:not(:disabled) { background:#e1edfc; }
+.inventory-page button:active:not(:disabled),.inventory-styled-modal button:active:not(:disabled) { transform:scale(.97); }
+.inventory-page button:focus-visible,.inventory-page input:focus-visible,.inventory-page select:focus-visible,.inventory-styled-modal button:focus-visible { outline:3px solid #0875e1; outline-offset:3px; }
+.inventory-page .inventory-pagination { color:#596579; padding:1rem 0; border:0; }
+.inventory-page .inventory-empty { color:#596579; background:white; border:1px dashed #cbd5e2; }
+.inventory-styled-modal { font-family:system-ui,sans-serif; border-top:0; background:#fcfcfe; border-radius:1.25rem; padding:1.75rem; }
+.inventory-styled-modal h2 { color:#202631; font-family:inherit; letter-spacing:-.025em; }
+.inventory-styled-modal label { font-size:.8125rem; color:#46556b; }
+.native-modal:has(.inventory-styled-modal)::backdrop { background:#14223855; backdrop-filter:blur(3px); }
+@media(max-width:760px) { .inventory-page .inventory-hero { padding:1.25rem; gap:1rem; } .inventory-page .inventory-overview > div { padding:1rem 1.25rem; } .inventory-page .inventory-catalog .filters { position:static; } .inventory-page .filters .search { min-width:0; width:100%; } .inventory-page .filters select { width:100%; } }
+@media(prefers-reduced-motion:reduce) { .inventory-page button,.inventory-page .inventory-stock-card,.inventory-styled-modal button { transition:none; } .inventory-page button:active:not(:disabled),.inventory-styled-modal button:active:not(:disabled) { transform:none; } }
+@media(prefers-reduced-transparency:reduce) { .inventory-page .inventory-catalog .filters { background:#f8fafd; backdrop-filter:none; } .native-modal:has(.inventory-styled-modal)::backdrop { backdrop-filter:none; } }
+@media(prefers-contrast:more) { .inventory-page .inventory-stock-card,.inventory-page .inventory-overview,.inventory-page .inventory-catalog .filters { border-color:#49596d; } .inventory-page .inventory-catalog .filters { background:white; backdrop-filter:none; } }

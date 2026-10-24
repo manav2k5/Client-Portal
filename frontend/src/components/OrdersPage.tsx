@@ -1,10 +1,14 @@
+import OrderEta from "./OrderEta";
+import OrderTray from "./OrderTray";
+import OrderActions from "./OrderActions";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 import Icon from "./Icon";
 import Modal from "./Modal";
+import OrderDocuments from "./OrderDocuments";
 
-const API = "http://127.0.0.1:8001";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8001";
 const PAGE_SIZE = 12;
 
 type FieldDefinition = {
@@ -28,12 +32,14 @@ type SavedItem = {
   [key: string]: CellValue;
 };
 
-type SavedOrder = {
+export type SavedOrder = {
   id: string;
   sales_order_no: string;
   customers: Customer | null;
   sales_order_items: SavedItem[];
   [key: string]: CellValue | Customer | SavedItem[];
+  edit_version: number;
+  updated_at: string | null;
 };
 
 type OrderList = {
@@ -43,13 +49,14 @@ type OrderList = {
 
 type DraftItem = {
   localId: string;
+  savedId?: string;
   values: Record<string, string>;
 };
 
 const headerFields: FieldDefinition[] = [
   {
     key: "country",
-    label: "Country",
+    label: "Destination (country, state or city)",
     required: true,
   },
   {
@@ -160,7 +167,7 @@ const itemFields: FieldDefinition[] = [
   },
   {
     key: "current_status",
-    label: "Current Status",
+    label: "ETA",
     required: true,
   },
 ];
@@ -217,7 +224,7 @@ function newItem(itemNumber: number): DraftItem {
       packed_qty_lbs: "0",
       wip_qty_lbs: "0",
       rm_po_qty_lbs: "0",
-      current_status: "Processing",
+      current_status: "Not provided",
       remark: "",
     },
   };
@@ -246,23 +253,7 @@ function getOrderTotals(order: SavedOrder) {
 }
 
 function getOrderStatus(order: SavedOrder) {
-  const statuses = [
-    ...new Set(
-      order.sales_order_items.map((item) =>
-        String(item.current_status || "Processing")
-      )
-    ),
-  ];
-
-  if (statuses.length === 0) {
-    return "No items";
-  }
-
-  if (statuses.length === 1) {
-    return statuses[0];
-  }
-
-  return "Mixed status";
+  return String(order.order_status || "Pending");
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -360,11 +351,17 @@ function fieldInput(
   );
 }
 
-export default function OrdersPage() {
-  const [list, setList] = useState<OrderList>({
-    items: [],
-    total: 0,
-  });
+export default function OrdersPage({
+  initialOrder = null,
+  view = "active",
+}: {
+  initialOrder?: SavedOrder | null;
+  view?: "active" | "completed" | "archive";
+}) {const [list, setList] = useState<OrderList>({
+  items: [],
+  total: 0,
+});
+
 
   const [customers, setCustomers] = useState<Customer[]>([]);
 
@@ -383,7 +380,16 @@ export default function OrdersPage() {
   const [message, setMessage] = useState("");
 
   const [creating, setCreating] = useState(false);
-  const [selected, setSelected] = useState<SavedOrder | null>(null);
+  const [editing, setEditing] = useState<{
+  id: string;
+  version: number;
+} | null>(null);
+  const [selected, setSelected] = useState<SavedOrder | null>(initialOrder);
+
+  const [minimized, setMinimized] = useState<SavedOrder[]>([]);
+
+  const [previousView, setPreviousView] = useState(view);
+  if (previousView !== view) { setPreviousView(view); setOffset(0); }
 
   const [header, setHeader] = useState<Record<string, string>>({});
   const [items, setItems] = useState<DraftItem[]>([]);
@@ -456,6 +462,7 @@ export default function OrdersPage() {
           offset: String(offset),
           limit: String(PAGE_SIZE),
           q: search,
+          view,
         });
 
         if (customerFilter) {
@@ -469,6 +476,7 @@ export default function OrdersPage() {
 
         if (!controller.signal.aborted) {
           setList(result);
+
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -488,7 +496,7 @@ export default function OrdersPage() {
     void loadOrders();
 
     return () => controller.abort();
-  }, [offset, search, customerFilter, refresh]);
+  }, [offset, search, customerFilter, refresh, view]);
 
   function openCreate() {
     setHeader({
@@ -499,6 +507,55 @@ export default function OrdersPage() {
     setItems([newItem(10)]);
     setSaveError("");
     setMessage("");
+    setCreating(true);
+    setEditing(null);
+  }
+    function openEdit(order: SavedOrder) {
+    if (!Number.isInteger(order.edit_version)) {
+      setMessage(
+        "Refresh the orders list before editing this order."
+      );
+      return;
+    }
+
+    const nextHeader: Record<string, string> = {
+      customer_id: String(
+        order.customer_id ?? order.customers?.id ?? ""
+      ),
+    };
+
+    for (const field of headerFields) {
+      nextHeader[field.key] = String(order[field.key] ?? "");
+    }
+
+    const nextItems: DraftItem[] = order.sales_order_items.map(
+      (item) => {
+        const values: Record<string, string> = {};
+
+        for (const field of itemFields) {
+          values[field.key] = String(item[field.key] ?? "");
+        }
+
+        values.remark = String(item.remark ?? "");
+
+        return {
+          localId: item.id,
+          savedId: item.id,
+          values,
+        };
+      }
+    );
+
+    setHeader(nextHeader);
+    setItems(nextItems);
+    setEditing({
+      id: order.id,
+      version: order.edit_version,
+    });
+
+    setSaveError("");
+    setMessage("");
+    setSelected(null);
     setCreating(true);
   }
 
@@ -537,7 +594,7 @@ export default function OrdersPage() {
     ]);
   }
 
-  async function saveOrder(event: FormEvent<HTMLFormElement>) {
+    async function saveOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setSaving(true);
@@ -574,14 +631,36 @@ export default function OrdersPage() {
 
         if (!Number.isFinite(ordered) || ordered <= 0) {
           throw new Error(
-            `SO item ${values.so_item}: enter an order quantity greater than zero.`
+            `SO item ${values.so_item}: order quantity must be greater than zero.`
           );
+        }
+
+        for (const field of itemFields.filter(
+          (entry) => entry.quantity
+        )) {
+          const amount = Number(values[field.key]);
+
+          if (!Number.isFinite(amount) || amount < 0) {
+            throw new Error(
+              `SO item ${values.so_item}: ${field.label} must be zero or greater.`
+            );
+          }
         }
 
         if (dispatched > ordered) {
           throw new Error(
             `SO item ${values.so_item}: dispatched quantity cannot exceed order quantity.`
           );
+        }
+
+        if (editing) {
+          if (!item.savedId) {
+            throw new Error(
+              "This item has no saved ID. Close and reopen the order."
+            );
+          }
+
+          values.id = item.savedId;
         }
 
         return values;
@@ -599,16 +678,32 @@ export default function OrdersPage() {
           field.type === "date" ? raw || null : raw;
       }
 
+      if (editing) {
+        payload.expected_version = editing.version;
+      }
+
+      const wasEditing = editing !== null;
+
       const saved: {
         id: string;
         sales_order_no: string;
-      } = await request("/orders", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      } = await request(
+        editing ? `/dev/orders/${editing.id}/edit` : "/orders",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
 
       setCreating(false);
-      setMessage(`${saved.sales_order_no} saved successfully.`);
+      setEditing(null);
+      setSelected(null);
+
+      setMessage(
+        `${saved.sales_order_no} ${
+          wasEditing ? "updated" : "created"
+        } successfully.`
+      );
 
       setSearch("");
       setCustomerFilter("");
@@ -618,7 +713,7 @@ export default function OrdersPage() {
       setSaveError(
         error instanceof Error
           ? error.message
-          : "Unable to save order."
+          : "Unable to save the order."
       );
     } finally {
       setSaving(false);
@@ -637,6 +732,7 @@ export default function OrdersPage() {
               <th>Order quantity</th>
               <th>Dispatch progress</th>
               <th>Status</th>
+              <th>ETA</th>
               <th>
                 <span className="sr-only">View details</span>
               </th>
@@ -709,6 +805,7 @@ export default function OrdersPage() {
                   <td>
                     <StatusBadge status={status} />
                   </td>
+                  <td><OrderEta items={order.sales_order_items} /></td>
 
                   <td>
                     <button
@@ -730,150 +827,173 @@ export default function OrdersPage() {
   }
 
   // Full details shown after clicking the arrow.
+    // Full details shown after clicking the arrow.
   function renderOrderDetails(order: SavedOrder) {
     const totals = getOrderTotals(order);
 
-    const detailCardStyle = {
-      padding: 20,
-      border: "1px solid #e1e9f4",
-      borderRadius: 10,
-      background: "#ffffff",
-      minWidth: 0,
-    };
-
     return (
-      <>
-        <StatusBadge status={getOrderStatus(order)} />
-
-        <div className="detail-summary">
-          <div>
-            <small>Ordered quantity</small>
-            <strong>
-              {formatQuantity(totals.ordered)} LBS
-            </strong>
-          </div>
-
-          <div>
-            <small>Dispatched quantity</small>
-            <strong>
-              {formatQuantity(totals.dispatched)} LBS
-            </strong>
-          </div>
-
-          <div>
-            <small>Balance quantity</small>
-            <strong>
-              {formatQuantity(totals.balance)} LBS
-            </strong>
-          </div>
+      <div className="od-content">
+        <div className="od-status-row">
+          <StatusBadge status={getOrderStatus(order)} />
+          <span>
+            Created {formatDate(order.so_create_date)}
+          </span>
         </div>
 
-        <h3>Customer and order information</h3>
-
-        <div className="order-form-grid">
-          <div style={detailCardStyle}>
-            <small>Customer</small>
-            <strong>
-              {order.customers?.name ?? "—"}
-            </strong>
-            <small>{order.customers?.code}</small>
-          </div>
-
-          {headerFields.map((field) => (
-            <div style={detailCardStyle} key={field.key}>
-              <small>{field.label}</small>
-
-              <strong style={{ overflowWrap: "anywhere" }}>
-                {field.type === "date"
-                  ? formatDate(order[field.key])
-                  : displayValue(order[field.key])}
-              </strong>
+        <div className="od-summary">
+          {[
+            ["Ordered", totals.ordered],
+            ["Dispatched", totals.dispatched],
+            ["Remaining", totals.balance],
+          ].map(([label, value]) => (
+            <div key={String(label)}>
+              <span>{label}</span>
+              <strong>{formatQuantity(Number(value))}</strong>
+              <small>LBS</small>
             </div>
           ))}
         </div>
 
-        <h3>
-          SO items ({order.sales_order_items.length})
-        </h3>
+        <div className="od-progress">
+          <div>
+            <span>Dispatch progress</span>
+            <strong>{Math.round(totals.progress)}%</strong>
+          </div>
+          <progress
+            max={100}
+            value={totals.progress}
+            aria-label="Order dispatch progress"
+          />
+        </div>
 
-        {order.sales_order_items.map((item) => (
-          <section className="order-item-form" key={item.id}>
-            <div className="customers-toolbar">
-              <h3>SO item {displayValue(item.so_item)}</h3>
+        <section className="od-section">
+          <h3>Order information</h3>
 
-              <StatusBadge
-                status={String(item.current_status || "Processing")}
-              />
+          <dl className="od-fields">
+            <div>
+              <dt>Customer</dt>
+              <dd>{order.customers?.name ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>Customer code</dt>
+              <dd>{order.customers?.code ?? "—"}</dd>
             </div>
 
-            <div className="order-form-grid">
-              {itemFields
-                .filter(
-                  (field) =>
-                    field.key !== "so_item" &&
-                    field.key !== "current_status"
-                )
-                .map((field) => (
-                  <div key={field.key}>
-                    <small>{field.label}</small>
-
-                    <strong
-                      style={{
-                        fontSize: 13,
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {field.quantity
-                        ? formatQuantity(
-                            Number(item[field.key] ?? 0)
-                          )
-                        : displayValue(item[field.key])}
-                    </strong>
-                  </div>
-                ))}
-
-              <div>
-                <small>Balance Qty (LBS)</small>
-                <strong
-                  style={{
-                    fontSize: 13,
-                    color: "#2563eb",
-                  }}
-                >
-                  {formatQuantity(
-                    Number(item.balance_qty_lbs ?? 0)
-                  )}
-                </strong>
+            {headerFields.map((field) => (
+              <div key={field.key}>
+                <dt>{field.label}</dt>
+                <dd>
+                  {field.type === "date"
+                    ? formatDate(order[field.key])
+                    : displayValue(order[field.key])}
+                </dd>
               </div>
-            </div>
+            ))}
+          </dl>
+        </section>
 
-            <div style={{ marginTop: 20 }}>
-              <small>Remark</small>
+        <section className="od-section">
+          <div className="od-section-heading">
+            <h3>Product details</h3>
+            <span>
+              {order.sales_order_items.length} SO items
+            </span>
+          </div>
 
-              <p
-                style={{
-                  marginTop: 6,
-                  fontSize: 13,
-                  lineHeight: 1.7,
-                  whiteSpace: "pre-wrap",
-                  overflowWrap: "anywhere",
-                }}
-              >
-                {displayValue(item.remark)}
-              </p>
-            </div>
-          </section>
-        ))}
-      </>
+          <div className="od-items">
+            {order.sales_order_items.map((item) => {
+              const ordered = Number(item.order_qty_lbs ?? 0);
+              const dispatched = Number(
+                item.dispatched_qty_lbs ?? 0
+              );
+
+              return (
+                <article className="od-item" key={item.id}>
+                  <header className="od-item-header">
+                    <div className="od-product-title">
+                      <span className="od-product-icon">
+                        <Icon name="box" size={20} />
+                      </span>
+                      <div>
+                        <h4>
+                          SO item {displayValue(item.so_item)}
+                        </h4>
+                        <p>
+                          {displayValue(item.customer_grade)}
+                          {" · "}
+                          {displayValue(item.shape)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="order-eta">ETA: {String(item.current_status || "Not provided")}</span>
+                  </header>
+
+                  <dl className="od-fields od-specs">
+                    {itemFields
+                      .filter(
+                        (field) =>
+                          !field.quantity &&
+                          ![
+                            "so_item",
+                            "current_status",
+                            "remark",
+                          ].includes(field.key)
+                      )
+                      .map((field) => (
+                        <div key={field.key}>
+                          <dt>{field.label}</dt>
+                          <dd>
+                            {displayValue(item[field.key])}
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
+
+                  <div className="od-quantities">
+                    {itemFields
+                      .filter((field) => field.quantity)
+                      .map((field) => (
+                        <div key={field.key}>
+                          <span>
+                            {field.label.replace(" (LBS)", "")}
+                          </span>
+                          <strong>
+                            {formatQuantity(
+                              Number(item[field.key] ?? 0)
+                            )}
+                          </strong>
+                          <small>LBS</small>
+                        </div>
+                      ))}
+
+                    <div className="od-balance">
+                      <span>Balance Qty</span>
+                      <strong>
+                        {formatQuantity(ordered - dispatched)}
+                      </strong>
+                      <small>LBS</small>
+                    </div>
+                  </div>
+
+                  <div className="od-remark">
+                    <span>Remark</span>
+                    <p>{displayValue(item.remark)}</p>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      </div>
     );
   }
-
   return (
     <section className="live-orders">
       {/* Page toolbar */}
       <div className="customers-toolbar">
         <div>
-          <h2>Sales orders</h2>
+          <h2>{view === "archive" ? "Archive" : view === "completed" ? "Completed orders" : "Active orders"}</h2>
 
           <p className="muted">
             Live database · Order summary · Quantities in LBS
@@ -898,6 +1018,7 @@ export default function OrdersPage() {
               Boolean(customerError) ||
               customers.length === 0
             }
+            hidden={view !== "active"}
             onClick={openCreate}
           >
             <Icon name="plus" size={18} />
@@ -1033,7 +1154,7 @@ export default function OrdersPage() {
             <div className="panel-heading">
               <div>
                 <h2 id="live-create-order-title">
-                  Create sales order
+                  {editing ? "Edit sales order" : "Create sales order"}
                 </h2>
 
                 <p>
@@ -1062,6 +1183,7 @@ export default function OrdersPage() {
 
                     <select
                       required
+                      disabled={editing !== null}
                       value={header.customer_id ?? ""}
                       onChange={(event) => {
                         const customer = customers.find(
@@ -1122,7 +1244,7 @@ export default function OrdersPage() {
                         <button
                           type="button"
                           className="secondary"
-                          disabled={items.length === 1}
+                          disabled={editing !== null || items.length === 1}
                           onClick={() =>
                             setItems((previous) =>
                               previous.filter(
@@ -1138,21 +1260,26 @@ export default function OrdersPage() {
 
                       <div className="order-form-grid">
                         {itemFields.map((field) =>
-                          fieldInput(
-                            field,
-                            item.values[field.key] ?? "",
-                            (value) =>
-                              updateItem(
-                                item.localId,
-                                field.key,
-                                value
-                              )
+                          editing && field.key === "so_item" ? (
+                            <label key={field.key}>
+                              {field.label}
+                              <input
+                                readOnly
+                                value={item.values.so_item ?? ""}
+                              />
+                            </label>
+                          ) : (
+                            fieldInput(
+                              field,
+                              item.values[field.key] ?? "",
+                              (value) =>
+                                updateItem(item.localId, field.key, value)
+                            )
                           )
                         )}
 
                         <label>
                           Balance Qty (LBS) · Calculated
-
                           <input
                             readOnly
                             value={
@@ -1187,7 +1314,7 @@ export default function OrdersPage() {
                 <button
                   type="button"
                   className="secondary"
-                  disabled={items.length >= 100}
+                 disabled={editing !== null || items.length >= 100}
                   onClick={addItem}
                 >
                   + Add SO item
@@ -1215,7 +1342,11 @@ export default function OrdersPage() {
                     type="submit"
                     className="primary"
                   >
-                    {saving ? "Saving…" : "Save order"}
+                    {saving
+                      ? "Saving…"
+                      : editing
+                        ? "Save changes"
+                        : "Create order"}
                   </button>
                 </div>
               </fieldset>
@@ -1225,13 +1356,14 @@ export default function OrdersPage() {
       )}
 
       {/* Full order details modal */}
+      <OrderTray orders={minimized} onOpen={order => { if (selected) setMinimized(current => [...current.filter(entry => entry.id !== selected.id), selected]); setSelected(order); }} onClose={id => setMinimized(current => current.filter(order => order.id !== id))} />
       {selected && (
         <Modal
           title="saved-order-title"
           onClose={() => setSelected(null)}
         >
-          <section className="detail-modal live-order-modal">
-            <div className="panel-heading">
+          <section className="detail-modal order-details-modern">
+            <div className="panel-heading order-window-heading">
               <div>
                 <p className="eyebrow">SALES ORDER</p>
 
@@ -1246,17 +1378,49 @@ export default function OrdersPage() {
                 </p>
               </div>
 
+              <div className="order-window-controls">
+                <button type="button" className="icon-button" title="Minimize order" aria-label="Minimize order" onClick={() => { setMinimized(current => [...current.filter(order => order.id !== selected.id), selected]); setSelected(null); }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M5 17h14" /></svg></button>
               <button
                 type="button"
                 className="icon-button"
                 aria-label="Close order details"
-                onClick={() => setSelected(null)}
+                onClick={() => { setMinimized(current => current.filter(order => order.id !== selected.id)); setSelected(null); }}
               >
                 <Icon name="close" />
               </button>
+              </div>
             </div>
 
+            
+            <OrderTray orders={minimized} onOpen={order => { if (selected) setMinimized(current => [...current.filter(entry => entry.id !== selected.id), selected]); setSelected(order); }} onClose={id => setMinimized(current => current.filter(order => order.id !== id))} />
             {renderOrderDetails(selected)}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+                marginBottom: 18,
+              }}
+            >
+              <span className="muted">
+                {selected.updated_at
+                  ? `Last updated: ${new Date(
+                    selected.updated_at
+                  ).toLocaleString("en-GB")}`
+                  : "No updates recorded yet"}
+              </span>
+
+
+            </div>
+            <OrderActions onEdit={() => openEdit(selected)} editDisabled={customersLoading || Boolean(customerError)} key={`${selected.id}:${selected.edit_version}`} order={selected} onSaved={() => { setSelected(null); setMinimized([]); setRefresh(value => value + 1); }} />
+            <OrderDocuments
+              key={selected.id}
+              readOnly={Boolean(selected.archived_at)}
+              orderId={selected.id}
+            />
 
             <button
               type="button"

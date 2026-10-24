@@ -17,5 +17,5 @@ export default function Modal({ children, onClose, title }: {
       document.body.style.overflow = previousOverflow;
     };
   }, []);
-  return <dialog ref={ref} className="native-modal" aria-labelledby={title} onCancel={onClose}>{children}</dialog>;
+  return <dialog ref={ref} className="native-modal" aria-labelledby={title} onCancel={event => { event.preventDefault(); onClose(); }}>{children}</dialog>;
 }
